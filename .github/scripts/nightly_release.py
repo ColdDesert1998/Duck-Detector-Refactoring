@@ -13,6 +13,8 @@ import re
 import subprocess
 import tempfile
 
+CHANNEL_TAG = 'update-channel-v3'
+
 
 def gh(*args, missing_ok=False):
     result = subprocess.run(['gh', *args], capture_output=True, text=True)
