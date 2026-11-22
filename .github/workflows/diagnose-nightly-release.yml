@@ -1,0 +1,127 @@
+name: Diagnose Nightly Release Channel
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel_tag:
+        description: "Release tag to inspect"
+        required: true
+        default: "update"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Inspect release and tag state
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect GitHub Release and Git tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL_TAG: ${{ inputs.channel_tag }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          echo "Repository: ${REPOSITORY}"
+          echo "Channel tag: ${CHANNEL_TAG}"
+          echo
+
+          release_file="${RUNNER_TEMP}/channel-release.json"
+          ref_file="${RUNNER_TEMP}/channel-ref.json"
+          release_found=false
+          ref_found=false
+
+          echo "## Release lookup" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Repository: \`${REPOSITORY}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Requested tag: \`${CHANNEL_TAG}\`" >> "$GITHUB_STEP_SUMMARY"
+
+          if gh api "repos/${REPOSITORY}/releases/tags/${CHANNEL_TAG}" > "$release_file" 2>"${RUNNER_TEMP}/release-error.txt"; then
+            release_found=true
+            tag_name="$(jq -r '.tag_name // "missing"' "$release_file")"
+            draft="$(jq -r '.draft // "missing"' "$release_file")"
+            prerelease="$(jq -r '.prerelease // "missing"' "$release_file")"
+            immutable="$(jq -r 'if has("immutable") then (.immutable|tostring) else "not-returned-by-api" end' "$release_file")"
+            release_id="$(jq -r '.id // "missing"' "$release_file")"
+            html_url="$(jq -r '.html_url // "missing"' "$release_file")"
+
+            echo "Release found:"
+            echo "  tag_name=${tag_name}"
+            echo "  draft=${draft}"
+            echo "  prerelease=${prerelease}"
+            echo "  immutable=${immutable}"
+            echo "  id=${release_id}"
+            echo "  url=${html_url}"
+
+            {
+              echo "- Release found: **yes**"
+              echo "- \`tag_name\`: \`${tag_name}\`"
+              echo "- \`draft\`: \`${draft}\`"
+              echo "- \`prerelease\`: \`${prerelease}\`"
+              echo "- \`immutable\`: \`${immutable}\`"
+              echo "- Release ID: \`${release_id}\`"
+              echo "- [Open Release](${html_url})"
+            } >> "$GITHUB_STEP_SUMMARY"
+
+            echo
+            echo "Validation against nightly_release.py require_channel():"
+            valid=true
+            [[ "$tag_name" == "$CHANNEL_TAG" ]] || valid=false
+            [[ "$draft" == "false" ]] || valid=false
+            [[ "$prerelease" == "true" ]] || valid=false
+            [[ "$immutable" == "false" ]] || valid=false
+
+            if [[ "$valid" == "true" ]]; then
+              echo "PASS: Release satisfies all four checks."
+              echo "- Result: **PASS** — all four checks are satisfied." >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "FAIL: One or more required Release properties do not match."
+              echo "- Result: **FAIL** — one or more properties do not match." >> "$GITHUB_STEP_SUMMARY"
+              echo "Expected: tag_name=${CHANNEL_TAG}, draft=false, prerelease=true, immutable=false"
+            fi
+          else
+            echo "No Release was returned for this tag (or the API request failed)."
+            cat "${RUNNER_TEMP}/release-error.txt" || true
+            echo "- Release found: **no / not accessible**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo
+          echo "## Git tag reference lookup"
+          if gh api "repos/${REPOSITORY}/git/ref/tags/${CHANNEL_TAG}" > "$ref_file" 2>"${RUNNER_TEMP}/ref-error.txt"; then
+            ref_found=true
+            ref_type="$(jq -r '.object.type // "missing"' "$ref_file")"
+            ref_sha="$(jq -r '.object.sha // "missing"' "$ref_file")"
+            echo "Tag ref found: type=${ref_type}, sha=${ref_sha}"
+            {
+              echo "- Git tag reference found: **yes**"
+              echo "- Object type: \`${ref_type}\`"
+              echo "- Object SHA: \`${ref_sha}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No Git tag ref was returned (or the API request failed)."
+            cat "${RUNNER_TEMP}/ref-error.txt" || true
+            echo "- Git tag reference found: **no / not accessible**" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo
+          echo "## Interpretation"
+          if [[ "$release_found" == "true" && "$ref_found" == "true" ]]; then
+            echo "A Release and Git tag reference currently exist for this name."
+            echo "- Both a Release and Git tag currently exist." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "$release_found" == "false" && "$ref_found" == "false" ]]; then
+            echo "Neither object is visible through these API endpoints."
+            echo "If GitHub still rejects tag creation with an immutable-release reuse error, the historical reservation is not exposed by these lookups. This workflow cannot conclusively inspect or clear that hidden state."
+            {
+              echo "- Neither object is currently visible through the queried API endpoints."
+              echo "- An immutable-release historical reservation, if present, is not exposed by these lookups and cannot be cleared by this read-only workflow."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Only one of the Release or Git tag reference is visible. Review the results above."
+            echo "- Only one object is visible; review the results above." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo
+          echo "This workflow is read-only. It does not create, delete, publish, or modify tags/releases."
