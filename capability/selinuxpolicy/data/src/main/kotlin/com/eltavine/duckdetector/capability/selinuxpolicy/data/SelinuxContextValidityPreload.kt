@@ -131,13 +131,33 @@ public class SelinuxContextValidityPreload {
             }
             dirtySepolicyRaw = withRaw.dirtySepolicyRaw
             trace("selinux: raw access state=${dirtySepolicyRaw.state} transactions=${dirtySepolicyRaw.observations.size}")
-            val timing = if (currentUid == appInfo.uid && withRaw.available && withRaw.carrierMatchesExpected) {
+            val withTiming = if (currentUid == appInfo.uid && withRaw.available && withRaw.carrierMatchesExpected) {
                 trace("selinux: KSU raw context timing")
-                SelinuxRawAccess.measureKsuContextTiming()
-            } else {
-                emptyList()
-            }
-            SelinuxContextValidityPayloadCodec.encode(withRaw.copy(ksuTimingBatchDifferencesNs = timing))
+                val contextTiming = SelinuxRawAccess.measureKsuContextTiming()
+                trace("selinux: KSU setprocattr timing")
+                val procAttrTiming = SelinuxRawAccess.measureKsuContextTiming(procAttr = true)
+                withRaw.copy(
+                    ksuTimingBatchDifferencesNs = contextTiming,
+                    ksuProcAttrTimingBatchDifferencesNs = procAttrTiming,
+                )
+            } else withRaw
+            // Do not disturb the legacy timing order: this separate, untimed
+            // same-FD experiment runs after the existing oracles, in the parent.
+            val withFdReuse = if (currentUid == appInfo.uid &&
+                withTiming.available && withTiming.carrierMatchesExpected
+            ) {
+                trace("selinux: xxksu same-FD transaction state")
+                withTiming.copy(xxksuFdReuseRaw = SelinuxRawAccess.probeXxksuFdReuse())
+            } else withTiming
+            // Independent scanner/parser mismatch; the original timing and
+            // same-FD experiments have already completed at this point.
+            val withAccessTail = if (currentUid == appInfo.uid &&
+                withFdReuse.available && withFdReuse.carrierMatchesExpected
+            ) {
+                trace("selinux: xxksu SELinuxFS access ignored fourth field")
+                withFdReuse.copy(xxksuAccessTailRaw = SelinuxRawAccess.probeXxksuAccessTail())
+            } else withFdReuse
+            SelinuxContextValidityPayloadCodec.encode(withAccessTail)
         } catch (throwable: Throwable) {
             fallbackPayload(
                 throwable.message ?: "SELinux app zygote preload failed.",

@@ -1,3 +1,20 @@
+/*
+ * Copyright 2026 Duck Apps Contributor
+ * If you have any questions, suggestions, or other inquiries, please email Eltavine <me@eltavine.com>.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.eltavine.duckdetector.capability.selinuxpolicy.data
 
 import android.system.ErrnoException
@@ -80,13 +97,28 @@ internal object SelinuxRawAccess {
         }
     }
 
-    fun measureKsuContextTiming(): List<Long> {
+    fun measureKsuContextTiming(procAttr: Boolean = false): List<Long> {
         if (!SelinuxContextValidityBridge.isNativeLibraryLoaded) return emptyList()
-        return runCatching { nativeMeasureKsuContextTiming()?.toList().orEmpty() }
+        return runCatching { nativeMeasureKsuContextTiming(procAttr)?.toList().orEmpty() }
             .getOrDefault(emptyList())
+    }
+
+    /** Raw app_zygote SELinuxFS two-write transaction record; interpretation belongs to the feature. */
+    fun probeXxksuFdReuse(): String? {
+        if (!SelinuxContextValidityBridge.isNativeLibraryLoaded) return null
+        return runCatching { nativeProbeXxksuFdReuse() }.getOrNull()
+    }
+
+    /** Untimed SELinuxFS /access ignored-fourth-field experiment; app_zygote parent only. */
+    fun probeXxksuAccessTail(): String? {
+        if (!SelinuxContextValidityBridge.isNativeLibraryLoaded) return null
+        return runCatching { nativeProbeXxksuAccessTail() }.getOrNull()
     }
 
     private external fun nativeContextNode(context: String): String
 
-    private external fun nativeMeasureKsuContextTiming(): LongArray?
+    private external fun nativeMeasureKsuContextTiming(procAttr: Boolean): LongArray?
+
+    private external fun nativeProbeXxksuFdReuse(): String?
+    private external fun nativeProbeXxksuAccessTail(): String?
 }

@@ -33,6 +33,9 @@ fun SelinuxReport.toDetectorStatus(): DetectorStatus {
             SelinuxMode.ENFORCING -> when {
                 auditIntegrity?.state == SelinuxAuditIntegrityState.TAMPERED -> DetectorStatus.danger()
                 contextValidity?.contextValidity?.verdict == SelinuxContextValidityVerdict.KSU_PRESENT -> DetectorStatus.danger()
+                methods.any { it.oracle == SelinuxOracle.XXKSU_FD_REUSE && it.isSecure == false } -> DetectorStatus.danger()
+                methods.any { it.oracle == SelinuxOracle.XXKSU_ACCESS_TAIL && it.isSecure == false } -> DetectorStatus.danger()
+                methods.any { it.oracle == SelinuxOracle.XXKSU_CONTEXT_NUL && it.isSecure == false } -> DetectorStatus.danger()
                 policyloadSeqno?.isSecure == false -> DetectorStatus.danger()
                 methods.any { it.oracle == SelinuxOracle.STATUS_MMAP_ABI && it.isSecure == false } -> DetectorStatus.danger()
                 // EN: Please fucking do NOT downgrade this to WARNING. I reproduced the
@@ -69,6 +72,12 @@ fun SelinuxReport.toDetectorStatus(): DetectorStatus {
             SelinuxMode.PERMISSIVE, SelinuxMode.DISABLED -> DetectorStatus.danger()
             SelinuxMode.UNKNOWN -> if (ksuContextTimingDetected() || methods.any {
                 it.oracle == SelinuxOracle.DIRTY_SEPOLICY_RAW && it.dirtySepolicyDanger
+            } || methods.any {
+                it.oracle == SelinuxOracle.XXKSU_FD_REUSE && it.isSecure == false
+            } || methods.any {
+                it.oracle == SelinuxOracle.XXKSU_ACCESS_TAIL && it.isSecure == false
+            } || methods.any {
+                it.oracle == SelinuxOracle.XXKSU_CONTEXT_NUL && it.isSecure == false
             }) {
                 DetectorStatus.danger()
             } else if (appZygoteCarrierState == AppZygoteCarrierSupportState.FAILED ||
@@ -82,7 +91,10 @@ fun SelinuxReport.toDetectorStatus(): DetectorStatus {
 }
 
 fun SelinuxReport.ksuContextTimingDetected(): Boolean =
-    methods.any { it.oracle == SelinuxOracle.KSU_CONTEXT_TIMING && it.isSecure == false }
+    methods.any {
+        (it.oracle == SelinuxOracle.KSU_CONTEXT_TIMING || it.oracle == SelinuxOracle.KSU_PROC_ATTR_TIMING) &&
+            it.isSecure == false
+    }
 
 fun contextValidityResult(report: SelinuxReport): SelinuxCheckResult? {
     return report.methods.firstOrNull { it.oracle == SelinuxOracle.CONTEXT_VALIDITY }

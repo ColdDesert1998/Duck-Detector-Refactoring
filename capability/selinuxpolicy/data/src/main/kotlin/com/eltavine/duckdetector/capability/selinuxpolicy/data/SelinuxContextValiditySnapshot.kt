@@ -123,6 +123,11 @@ public data class SelinuxContextValiditySnapshot(
     val notes: List<String> = emptyList(),
     /** KSU batch totals, per-pair median, batch direction counts, and batch size. Older carriers include a file context. */
     val ksuTimingBatchDifferencesNs: List<Long> = emptyList(),
+    val ksuProcAttrTimingBatchDifferencesNs: List<Long> = emptyList(),
+    /** Raw, self-controlled SELinuxFS same-FD write outcomes from the app_zygote parent. */
+    val xxksuFdReuseRaw: String? = null,
+    /** Parser/scanner mismatch for an ignored fourth SELinuxFS /access field, not FD reuse. */
+    val xxksuAccessTailRaw: String? = null,
     /**
      * Why this snapshot is or is not usable. [available] alone cannot distinguish "the probe ran and
      * found nothing" from "the probe never ran", so the reason is carried here. [failureReason] holds

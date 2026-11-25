@@ -226,6 +226,31 @@ internal fun buildImpactItems(report: SelinuxReport): List<SelinuxImpactItemMode
             DetectorStatus.danger(),
         )
     }
+    if (report.methods.any { it.oracle == SelinuxOracle.XXKSU_FD_REUSE && it.isSecure == false }) {
+        items += SelinuxImpactItemModel(
+            "App Zygote observed an xxksu SELinuxFS same-FD early return for a targeted context, " +
+                "while valid and invalid stock transaction controls consumed their FDs. " +
+                "This is a strong implementation-specific state anomaly, not universal proof of root.",
+            DetectorStatus.danger(),
+        )
+    }
+    if (report.methods.any { it.oracle == SelinuxOracle.XXKSU_ACCESS_TAIL && it.isSecure == false }) {
+        items += SelinuxImpactItemModel(
+            "App Zygote observed a SELinuxFS /access parser/scanner mismatch: ignored :ksu: and " +
+                ":ksu_file: tails returned EINVAL while equal-length benign tails kept the " +
+                "same access decision. This is implementation-specific evidence, not proof of root.",
+            DetectorStatus.danger(),
+        )
+    }
+    if (report.methods.any { it.oracle == SelinuxOracle.XXKSU_CONTEXT_NUL && it.isSecure == false }) {
+        items += SelinuxImpactItemModel(
+            "App Zygote observed a SELinuxFS /context parser/scanner mismatch: hidden-type " +
+                "tokens after the first NUL returned EINVAL while the same valid context " +
+                "with equal-length benign tails succeeded. This shares the /access Hide scanner " +
+                "mechanism and must not count as independent root evidence.",
+            DetectorStatus.danger(),
+        )
+    }
     if (report.methods.any { it.oracle == SelinuxOracle.APP_ZYGOTE_ATTR_TIMING &&
             it.avcLookup?.timingVerdict == SelinuxAppZygoteTimingVerdict.POSITIVE }) {
         items += SelinuxImpactItemModel(
